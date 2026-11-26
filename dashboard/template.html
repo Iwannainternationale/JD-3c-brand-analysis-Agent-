@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>品牌市占分析 Agent · 模拟看板</title>
+<style>
+:root{font:15px/1.55 system-ui,sans-serif;color:#172945;background:#edf3f9}body{margin:0}header{background:#163354;color:white;padding:25px max(18px,calc((100vw - 1080px)/2));}header h1{margin:0 0 7px;font-size:clamp(23px,4vw,34px)}header p{margin:0}main{max-width:1080px;margin:auto;padding:18px}section{background:white;border:1px solid #ccd9e8;border-radius:14px;padding:18px;margin:0 0 16px}h2{margin:0 0 8px;font-size:21px}p{margin:8px 0}.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.btn,select{font:inherit;border:1px solid #a3b8d1;border-radius:7px;padding:7px 10px;background:#fff;color:#153a64;cursor:pointer}.btn:hover{background:#edf6ff}.primary{background:#235a91;color:white}.primary:hover{background:#174678}.muted{color:#50647c}.error{color:#a12338}.scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:650px}th,td{text-align:left;border-bottom:1px solid #e0e9f3;padding:8px 9px;vertical-align:middle}th{background:#f5f8fc;white-space:nowrap}.badge{display:inline-block;border-radius:50px;padding:1px 9px;background:#e8f0fa;color:#284768;white-space:nowrap}.badge[data-label="风险"]{background:#fce7ec;color:#8b2340}.badge[data-label="预警"]{background:#fff1d5;color:#744310}.no-match{color:#745020}.numeric{font-variant-numeric:tabular-nums;white-space:nowrap}.wrap{white-space:normal}.chart-frame{margin:14px 0;overflow:auto}svg{display:block;width:100%;min-width:460px;height:auto;border:1px solid #e0e9f3;border-radius:8px}[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header><h1>品牌市占分析 Agent</h1><p>模拟看板 · 从风险标记到月度排查</p></header>
+<main>
+<section aria-labelledby="riskTitle"><h2 id="riskTitle">风险品牌清单</h2>
+<p>导入分析命令生成的 <code>brand-risk-list.json</code>。周市占来自清单；下方只使用合成月度明细，不拿月度数据验证周度变化。</p>
+<div class="controls"><button type="button" class="btn primary" id="sample">载入模拟清单</button><label for="riskFile">选择风险 JSON：</label><input type="file" id="riskFile" accept=".json,application/json"><button type="button" class="btn" id="clear">移除清单</button></div>
+<p id="status" class="muted" role="status">尚未导入清单。下方也可以独立浏览月度样例。</p>
+<div class="scroll" id="riskPane" hidden><table><thead><tr><th>品牌</th><th>Agent 标记</th><th>经营同比</th><th>三周市占（由早到晚）</th><th>判定依据</th><th>月度排查</th></tr></thead><tbody id="riskBody"></tbody></table></div>
+</section>
+<section aria-labelledby="monthlyTitle" id="monthly" tabindex="-1"><h2 id="monthlyTitle">模拟月度明细</h2>
+<p class="muted" id="capacity"></p>
+<div class="controls"><label>品牌 <select id="brands"></select></label><label>月份 <select id="months"></select></label><span id="monthlyState" class="muted" role="status"></span></div>
+<div class="chart-frame"><svg id="chart" role="img" aria-label="品牌月度趋势" viewBox="0 0 880 205"></svg></div>
+<div class="scroll"><table><thead><tr><th>类目</th><th>渠道 A 自营</th><th>渠道 A 商家</th><th>渠道 B</th><th>渠道 C</th><th>渠道 D</th><th>渠道 A 月度份额</th></tr></thead><tbody id="monthlyBody"></tbody></table></div>
+</section>
+</main>
+<script type="application/json" id="demo">/*__DEMO__* /</script>
+<script type="application/json" id="sampleData">/*__RISK__* /</script>
+<script>
+'use strict';
+const demo=JSON.parse(document.getElementById('demo').textContent), el=id=>document.getElementById(id);
+const mk=(tag,text,cls)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node};
+const norm=s=>s.normalize('NFKC').trim().toLowerCase();
+const brandMonths=new Map(), byName=new Map();
+for(const row of demo.rows){
+  byName.set(norm(row[1]),row[1]);
+  const months=brandMonths.get(row[1])||new Map();brandMonths.set(row[1],months);
+  const list=months.get(row[0])||[];months.set(row[0],list);list.push(row);
+}
+function sum(rows){const total=[0,0,0,0,0];for(const row of rows)for(let i=0;i<5;i++)total[i]+=row[i+3];return total}
+const share=values=>{const total=values.reduce((a,b)=>a+b,0);return total?(values[0]+values[1])/total:null};
+const pct=(x,digits=4)=>x===null?'缺数':(x*100).toLocaleString('zh-CN',{maximumFractionDigits:digits})+'%';
+function options(select,values){select.replaceChildren(...values.map(value=>{const opt=mk('option',value);opt.value=value;return opt}))}
+options(el('brands'),[...brandMonths.keys()]);
+el('capacity').textContent=`合成数据：${demo.months.length} 个月 · ${brandMonths.size} 个品牌 · ${new Set(demo.rows.map(r=>r[2])).size} 个类目 · 4 个模拟渠道。不读取或写入浏览器数据库。`;
+function setMonths(){options(el('months'),demo.months.filter(m=>brandMonths.get(el('brands').value).has(m)).reverse())}
+function drawChart(months){
+  const svg=el('chart'),NS='http://www.w3.org/2000/svg';svg.replaceChildren();
+  function paint(tag,attrs,text){const child=document.createElementNS(NS,tag);for(const [key,value] of Object.entries(attrs))child.setAttribute(key,value);if(text)child.textContent=text;svg.append(child);return child;}
+  const x=i=>54+i*797/(demo.months.length-1), y=v=>168-v*134;
+  for(const val of [0,.25,.5,.75,1]){
+    paint('line',{x1:54,y1:y(val),x2:851,y2:y(val),stroke:'#dbe6f1'});
+    paint('text',{x:47,y:y(val)+4,'text-anchor':'end',fill:'#526681','font-size':12},Math.round(val*100)+'%');
+  }
+  const points=[];
+  demo.months.forEach((month,i)=>{
+    if(i===0||i%5===0||i===demo.months.length-1)paint('text',{x:x(i),y:188,'text-anchor':'middle',fill:'#526681','font-size':12},month);
+    const v=months.has(month)?share(sum(months.get(month))):null;
+    const near=points.at(-1);
+    if(v!==null){
+      if(near)paint('line',{x1:near[0],y1:near[1],x2:x(i),y2:y(v),stroke:'#235a91','stroke-width':2.5});
+      const circle=paint('circle',{cx:x(i),cy:y(v),r:month===el('months').value?5:3,fill:month===el('months').value?'#9f2c3f':'#235a91'});
+      const title=document.createElementNS(NS,'title');title.textContent=month+' '+pct(v);circle.append(title);
+    }
+    points.push(v===null?null:[x(i),y(v)]);
+  });
+  paint('text',{x:54,y:20,fill:'#163354','font-size':13},'渠道 A 月度份额（自营 + 商家）');
+}
+function drawMonthly(){
+  const name=el('brands').value, month=el('months').value, months=brandMonths.get(name), rows=months.get(month)||[];
+  el('monthlyState').textContent=`${name} · ${month}`;
+  const displayRows=[['合计',sum(rows)],...rows.map(r=>[r[2],r.slice(3)])];
+  el('monthlyBody').replaceChildren(...displayRows.map(([c,values])=>{
+    const tr=mk('tr');tr.append(mk('td',c),...values.map(x=>mk('td',x.toLocaleString('zh-CN'),'numeric')),mk('td',pct(share(values)),'numeric'));return tr;
+  }));
+  drawChart(months);
+}
+el('brands').onchange=()=>{setMonths();drawMonthly()};el('months').onchange=drawMonthly;setMonths();drawMonthly();
+function week(code){
+  if(typeof code!=='string'||!/^\d{4}-W\d{2}$/.test(code))return NaN;
+  const yr=Number(code.slice(0,4)),n=Number(code.slice(6)),base=Date.UTC(yr,0,4);
+  const jan4=new Date(base), day=(jan4.getUTCDay()+6)%7, t=base+(7*(n-1)-day)*86400000;
+  return yr>=1000&&n>=1&&n<=53&&new Date(t+3*86400000).getUTCFullYear()===yr?t:NaN;
+}
+function validate(data){
+  const str=(v,n)=>typeof v==='string'&&v.length<=n&&!!v.trim();
+  if(!data||data.format!=='brand-risk-list'||data.version!==1||typeof data.demo!=='boolean'||!str(data.gmvPeriod,80)||!str(data.shareSource,100)||!Array.isArray(data.weeks)||data.weeks.length!==3||!Array.isArray(data.brands)||data.brands.length>10000)throw Error('不是 brand-risk-list v1，或缺少必要字段。');
+  const t=data.weeks.map(week);if(!t.every(Number.isFinite)||t[1]-t[0]!==604800000||t[2]-t[1]!==604800000)throw Error('周标识不是连续三周。');
+  const seen=new Set();
+  for(const row of data.brands){
+    if(!row||!str(row.brand,180)||!str(row.reason,500)||!['风险','预警','次要'].includes(row.label)||typeof row.keyBrand!=='boolean'||!Number.isFinite(row.yoy)||row.yoy>=0||!Array.isArray(row.shares)||row.shares.length!==3||row.shares.some(v=>v!==null&&(!Number.isFinite(v)||v<0||v>1))||(row.dashboardBrand!==undefined&&!str(row.dashboardBrand,180)))throw Error('清单品牌或数值字段无效。');
+    const k=norm(row.brand);if(seen.has(k))throw Error('清单品牌重复。');seen.add(k);
+    const [a,b,c]=row.shares;const expected=!row.keyBrand?'次要':a!==null&&b!==null&&c!==null&&a>b&&b>c?'风险':'预警';
+    if(row.label!==expected)throw Error('风险标签与周度证据不符。');
+  }
+  return data;
+}
+let active=null, revision=0;
+function status(msg,error=false){el('status').textContent=msg;el('status').className=error?'error':'muted'}
+function drawRisk(){
+  el('riskPane').hidden=!active;el('riskBody').replaceChildren();if(!active)return;
+  const counts={'风险':0,'预警':0,'次要':0}, frag=document.createDocumentFragment();
+  const listed=active.brands.slice().sort((a,b)=>['风险','预警','次要'].indexOf(a.label)-['风险','预警','次要'].indexOf(b.label));
+  for(const r of listed){
+    counts[r.label]++;const tr=mk('tr'),label=mk('td'),badge=mk('span',r.label,'badge');badge.dataset.label=r.label;label.append(badge);
+    const btnField=mk('td'), found=active.demo?byName.get(norm(r.dashboardBrand||r.brand)):null;
+    if(found){
+      const button=mk('button','查看月度明细','btn');button.type='button';button.setAttribute('aria-label','查看月度明细：'+r.brand);
+      button.onclick=()=>{el('brands').value=found;setMonths();drawMonthly();el('monthly').focus();el('monthly').scrollIntoView({block:'start'})};btnField.append(button);
+    }else btnField.append(mk('span',active.demo?'模拟底座未收录':'非模拟清单，不与模拟底座匹配','no-match'));
+    tr.append(mk('td',r.brand),label,mk('td',pct(r.yoy),'numeric'),mk('td',active.weeks.map((w,i)=>w+' '+pct(r.shares[i],10)).join(' → '),'wrap'),mk('td',r.reason),btnField);frag.append(tr);
+  }
+  el('riskBody').append(frag);
+  status(`${active.demo?'【模拟清单】':'【外部清单，仅阅读】'}${active.gmvPeriod} · ${active.shareSource} · ${active.weeks.join(' → ')} · 风险 ${counts['风险']} / 预警 ${counts['预警']} / 次要 ${counts['次要']}`);
+}
+el('riskFile').onchange=async()=>{
+  const file=el('riskFile').files[0];el('riskFile').value='';if(!file)return;const token=++revision;
+  try{if(file.size>5*1024*1024)throw Error('清单超过 5 MiB。');const next=validate(JSON.parse((await file.text()).replace(/^\uFEFF/,'')));if(token!==revision)return;active=next;drawRisk()}
+  catch(e){if(token===revision)status('导入失败：'+e.message+(active?' 此前清单仍保留。':''),true)}
+};
+el('sample').onclick=()=>{++revision;try{active=validate(JSON.parse(el('sampleData').textContent));drawRisk()}catch(e){status('无法载入模拟清单：'+e.message,true)}};
+el('clear').onclick=()=>{++revision;active=null;drawRisk();status('已移除清单。')};
+</script>
+</body></html>

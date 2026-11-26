@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Brand risk list v1",
+  "description": "Week succession, normalized brand uniqueness, and label/evidence consistency are checked by the analysis logic and the dashboard.",
+  "type": "object",
+  "required": ["format", "version", "demo", "gmvPeriod", "shareSource", "weeks", "brands"],
+  "properties": {
+    "format": {"const": "brand-risk-list"},
+    "version": {"const": 1},
+    "demo": {"type": "boolean"},
+    "gmvPeriod": {"type": "string", "minLength": 1, "maxLength": 80},
+    "shareSource": {"type": "string", "minLength": 1, "maxLength": 100},
+    "weeks": {"type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true, "items": {"type": "string", "pattern": "^[0-9]{4}-W(0[1-9]|[1-4][0-9]|5[0-3])$"}},
+    "brands": {
+      "type": "array", "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "required": ["brand", "label", "keyBrand", "yoy", "shares", "reason"],
+        "properties": {
+          "brand": {"type": "string", "minLength": 1, "maxLength": 180},
+          "dashboardBrand": {"type": "string", "minLength": 1, "maxLength": 180},
+          "label": {"enum": ["风险", "预警", "次要"]},
+          "keyBrand": {"type": "boolean"},
+          "yoy": {"type": "number", "exclusiveMaximum": 0},
+          "shares": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": ["number", "null"], "minimum": 0, "maximum": 1}},
+          "reason": {"type": "string", "minLength": 1, "maxLength": 500}
+        }
+      }
+    }
+  }
+}
