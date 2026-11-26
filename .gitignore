@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+output/
+private/
+.local/
+*.xlsx
+!examples/dashboard-excel/monthly-owner-demo.xlsx
+!examples/dashboard-excel/monthly-pop-demo.xlsx
+.DS_Store
+Thumbs.db
