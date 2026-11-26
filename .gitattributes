@@ -1,4 +1,0 @@
-* text=auto eol=lf
-# Keep the original single-file dashboard byte-for-byte.
-/marketshare_app/marketshare_app.html -text
-*.xlsx binary
