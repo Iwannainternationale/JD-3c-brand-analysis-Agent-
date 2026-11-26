@@ -1,2 +1,0 @@
-# Optional: only needed for reading .xlsx. CSV has no third-party dependencies.
-openpyxl>=3.1.5,<4
